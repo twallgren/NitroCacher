@@ -1,14 +1,15 @@
-﻿using NitroCacher.Interfaces;
+﻿using Fiddler;
+using Newtonsoft.Json;
+using NitroCacher.Interfaces;
 using NitroCacher.Models;
 using NitroCacher.Plugins;
 using NitroCacher.UI;
-using Fiddler;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.IO;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using System.Threading;
 using System.Windows.Forms;
 
 [assembly: Fiddler.RequiredVersion("2.3.5.0")]
@@ -28,6 +29,7 @@ namespace NitroCacher
 
         List<CachingRule> _cacheRules;
         bool Enabled => _userSettings != null && _userSettings.Enabled;
+        bool RepeatOriginalDuration => _userSettings != null && _userSettings.ReplayOriginalDuration;
         List<CachingRule> CacheRules => _cacheRules.Where(r => r.ProfileId == _userSettings.SelectedProfileId).ToList();
         public void AutoTamperRequestAfter(Session oSession)
         {
@@ -36,56 +38,94 @@ namespace NitroCacher
 
         public void AutoTamperRequestBefore(Session oSession)
         {
-            if (!Enabled) { return; }
-            var matchingRules = FindMatchingRules(oSession);
-            if (matchingRules.Count() == 0) return;
-
-
-            var firstMatchedRule = matchingRules[0];
-            var hash = Utils.GetHashFromRequest(oSession, firstMatchedRule.FilterRule);
-
-            if (firstMatchedRule.Cache.Has(hash))
+            try
             {
-                oSession.utilCreateResponseAndBypassServer();
-                var responseString = firstMatchedRule.Cache.Get<string>(hash);
-                var response = Utils.XmlDeSerialize<HttpResponse>(responseString);
-                response.Headers.ForEach(h => oSession.ResponseHeaders.Add(h.Key, h.Value));
-                if (firstMatchedRule.FilterRule.IsShownInUi)
+                if (!Enabled)
                 {
-                    oSession["ui-backcolor"] = ColorTranslator.ToHtml(Color.FromArgb(firstMatchedRule.FilterRule.BackgroundColor.ToArgb()));
-                    oSession["ui-color"] = ColorTranslator.ToHtml(Color.FromArgb(firstMatchedRule.FilterRule.ForegroundColor.ToArgb()));
+                    return;
                 }
-                else
-                {
-                    oSession["ui-hide"] = "true";
-                }
-                oSession.utilSetResponseBody(response.Body);
-                oSession["NitroCacher.flags.responseServedFromCache"] = "true";
-                matchingRules.ForEach(r => r.Cache.Set(hash, responseString));
-                return;
-            }
+                
+                var matchingRules = FindMatchingRules(oSession);
 
-            oSession["NitroCacher.flags.cacheKey"] = string.Join(";", matchingRules.Select(r => $"{r.FilterRule.Id}/{Utils.GetHashFromRequest(oSession, r.FilterRule)}"));
+                if (matchingRules.Count() == 0) return;
+
+
+                var firstMatchedRule = matchingRules[0];
+                var hash = Utils.GetHashFromRequest(oSession, firstMatchedRule.FilterRule);
+
+                if (firstMatchedRule.Cache.Has(hash))
+                {
+                    oSession.utilCreateResponseAndBypassServer();
+                    var responseString = firstMatchedRule.Cache.Get<string>(hash);
+                    var response = JsonConvert.DeserializeObject<HttpResponse>(responseString);
+                    response.Headers.ForEach(h =>
+                    {
+                        if (oSession.ResponseHeaders.All(sh => sh.Name != h.Key))
+                        {
+                            oSession.ResponseHeaders.Add(h.Key, h.Value);
+                        }
+                    });
+                    if (firstMatchedRule.FilterRule.IsShownInUi)
+                    {
+                        oSession["ui-backcolor"] = ColorTranslator.ToHtml(Color.FromArgb(firstMatchedRule.FilterRule.BackgroundColor.ToArgb()));
+                        oSession["ui-color"] = ColorTranslator.ToHtml(Color.FromArgb(firstMatchedRule.FilterRule.ForegroundColor.ToArgb()));
+                    }
+                    else
+                    {
+                        oSession["ui-hide"] = "true";
+                    }
+
+                    oSession.utilSetResponseBody(response.Body);
+                    oSession["NitroCacher.flags.responseServedFromCache"] = "true";
+                    matchingRules.ForEach(r => r.Cache.Set(hash, responseString));
+                    if (RepeatOriginalDuration)
+                    {
+                        Thread.Sleep(response.Duration);
+                    }
+
+                    return;
+                }
+
+                oSession["NitroCacher.flags.cacheKey"] = string.Join(";", matchingRules.Select(r => $"{r.FilterRule.Id}/{Utils.GetHashFromRequest(oSession, r.FilterRule)}"));
+            }
+            catch (Exception e)
+            {
+                File.AppendAllText(@"C:\Temp\nitrolog.txt", $"AutoTamperRequestBefore: {JsonConvert.SerializeObject(e)}\n");
+            }
         }
 
         public void AutoTamperResponseAfter(Session oSession)
         {
-            if (!Enabled || oSession["NitroCacher.flags.responseServedFromCache"] == "true") { return; }
-            var matchingRules = FindMatchingRules(oSession);
-            if (matchingRules.Count() == 0) return;
-            oSession.utilDecodeResponse();
-            var oBody = System.Text.Encoding.UTF8.GetString(oSession.responseBodyBytes);
-            var response = new HttpResponse(oSession.ResponseHeaders.Select(h => new Header(h.Name, h.Value)).ToList(), oBody);
-            var responseXml = Utils.XmlSerialize(response);
-            oSession["NitroCacher.flags.cacheKey"].Split(';').Select(v => new { CacheId = v.Split('/')[0], CacheKey = v.Split('/')[1] })
-                                                             .ToList()
-                                                             .ForEach(c =>
-                                                             {
-                                                                 var rule = matchingRules
-                                                                                .FirstOrDefault(r => r.FilterRule.Id == c.CacheId);
-                                                                 if (rule == null) return;
-                                                                 rule.Cache.Set(c.CacheKey, responseXml);
-                                                             });
+            try
+            {
+
+                if (!Enabled || oSession["NitroCacher.flags.responseServedFromCache"] == "true")
+                {
+                    return;
+                }
+
+                var matchingRules = FindMatchingRules(oSession);
+                if (matchingRules.Count() == 0) return;
+                oSession.utilDecodeResponse();
+                var oBody = System.Text.Encoding.UTF8.GetString(oSession.responseBodyBytes);
+                var response = new HttpResponse(oSession.ResponseHeaders.Select(h => new Header(h.Name, h.Value)).ToList(), oBody, 
+                    oSession.Timers.ServerDoneResponse-oSession.Timers.ClientDoneRequest);
+                var responseXml = JsonConvert.SerializeObject(response);
+                oSession["NitroCacher.flags.cacheKey"].Split(';').Select(v => new {CacheId = v.Split('/')[0], CacheKey = v.Split('/')[1]})
+                    .ToList()
+                    .ForEach(c =>
+                    {
+                        var rule = matchingRules
+                            .FirstOrDefault(r => r.FilterRule.Id == c.CacheId);
+                        if (rule == null) return;
+                        if (oSession.ResponseHeaders.Any(h => h.Name == "FiddlerGateway")) return;
+                        rule.Cache.Set(c.CacheKey, responseXml);
+                    });
+            }
+            catch (Exception e)
+            {
+                File.AppendAllText(@"C:\Temp\nitrolog.txt", $"AutoTamperResponseAfter: {JsonConvert.SerializeObject(e)}\n");
+            }
         }
 
         private List<CachingRule> FindMatchingRules(Session oSession)
@@ -108,6 +148,7 @@ namespace NitroCacher
 
         public void OnLoad()
         {
+            File.WriteAllLines(@"C:\Temp\nitrolog.txt", new[] {DateTime.Now.ToString()});
             _configManager = new XmlFileConfigManager();
             _userSettings = _configManager.GetConfig<UserSettings>() ?? new UserSettings { RuleProfiles = new List<RuleProfile>() };
             _cacheRules = _userSettings.RuleProfiles.SelectMany(p => p.Rules.Select(r => new CachingRule

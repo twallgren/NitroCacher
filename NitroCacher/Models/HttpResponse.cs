@@ -1,9 +1,5 @@
-﻿using Fiddler;
-using System;
+﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace NitroCacher.Models
 {
@@ -15,12 +11,14 @@ namespace NitroCacher.Models
 
         }
      
-        public HttpResponse(List<Header> headers, string body)
+        public HttpResponse(List<Header> headers, string body, TimeSpan duration)
         {
             Headers = headers;
             Body = body;
+            Duration = duration;
         }
         public List<Header> Headers { get; set; }
         public string Body { get; set; }
+        public TimeSpan Duration { get; set; }
     }
 }

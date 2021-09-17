@@ -20,7 +20,7 @@ namespace NitroCacher.UI
         private readonly Action _clearAllCache;
         private readonly Action<bool> _toggleIcon;
 
-        RuleProfile _ruleProfile => _userSettings.RuleProfiles.First(r => r.Id == _userSettings.SelectedProfileId);
+        RuleProfile _ruleProfile => _userSettings.RuleProfiles.FirstOrDefault(r => r.Id == _userSettings.SelectedProfileId);
 
         public Home(UserSettings userSettings, Action<string> clearCacheForRule, Action<string> clearAllCacheForProfile, Action clearAllCache, Action<bool> toggleIcon)
         {
@@ -48,6 +48,7 @@ namespace NitroCacher.UI
         private void DrawUi()
         {
             chkEnabled.Checked = _userSettings.Enabled;
+            chkReplayDuration.Checked = _userSettings.ReplayOriginalDuration;
             _toggleIcon(_userSettings.Enabled);
             PopulateProfilesList();
             PopulateRulesList();
@@ -68,12 +69,14 @@ namespace NitroCacher.UI
         {
             lstProfiles.Items.Clear();
             lstProfiles.Items.AddRange(_userSettings.RuleProfiles.ToArray());
-            lstProfiles.SelectedItem = _userSettings.RuleProfiles.FirstOrDefault(f => f.Id == _userSettings.SelectedProfileId);
+            var selectedItem = _userSettings.RuleProfiles.FirstOrDefault(f => f.Id == _userSettings.SelectedProfileId);
+            if (selectedItem != null) lstProfiles.SelectedItem = selectedItem;
         }
 
         private void PopulateRulesList()
         {
             lstRules.Items.Clear();
+            if (_ruleProfile == null) return;
             foreach (var rule in _ruleProfile.Rules)
             {
                 lstRules.Items.Add(rule, rule.IsEnabled);
@@ -143,6 +146,14 @@ namespace NitroCacher.UI
             _clearAllCacheForProfile((lstProfiles.SelectedItem as RuleProfile).Id);
         }
 
+        private void lnkRemoveProfile_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
+        {
+            
+            _userSettings.RuleProfiles.RemoveAll(r => r.Id == (lstProfiles.SelectedItem as RuleProfile)?.Id);
+            _userSettings.SelectedProfileId = _userSettings.RuleProfiles.FirstOrDefault()?.Id;
+            DrawUi();
+        }
+
         private void lnkClearCacheForRule_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
         {
             _clearCacheForRule((lstRules.SelectedItem as FilterRule).Id);
@@ -180,6 +191,11 @@ namespace NitroCacher.UI
         private void lnkRemoveRule_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
         {
             _ruleProfile.Rules.Remove(lstRules.SelectedItem as FilterRule);
+        }
+
+        private void checkBox1_CheckedChanged(object sender, EventArgs e)
+        {
+            _userSettings.ReplayOriginalDuration = chkReplayDuration.Checked;
         }
     }
 }

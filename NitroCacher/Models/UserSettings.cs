@@ -15,6 +15,7 @@ namespace NitroCacher.Models
         public List<RuleProfile> RuleProfiles { get; set; }
         public string SelectedProfileId { get; set; }
         public bool Enabled { get; set; }
+        public bool ReplayOriginalDuration { get; set; }
     }
     [Serializable]
     public class RuleProfile

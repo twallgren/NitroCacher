@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Xml.Serialization;
 using System.Drawing;
+using Newtonsoft.Json;
 
 namespace NitroCacher
 {
@@ -40,7 +41,7 @@ namespace NitroCacher
             var headersToIgnore = filterRule.HeadersToIgnore ?? new List<string>();
             var headers = oSession.RequestHeaders.Where(h => !headersToIgnore.Contains(h.Name)).Select(h => new Header(h.Name, h.Value)).ToList();
             var request = new HttpRequest(headers, oSession.url, oSession.RequestMethod, oSession.RequestBody);
-            var serializedRequest = XmlSerialize(request);
+            var serializedRequest = JsonConvert.SerializeObject(request);
             return ComputeSha256Hash(serializedRequest);
         }
 
@@ -59,24 +60,7 @@ namespace NitroCacher
             }
         }
 
-        public static string XmlSerialize<T>(T obj)
-        {
-            XmlSerializer serializer = new XmlSerializer(typeof(T));
-            using (var sw = new StringWriter())
-            {
-                serializer.Serialize(sw, obj);
-                return sw.ToString();
-            }
-        }
-
-        public static T XmlDeSerialize<T>(string xml) where T : class
-        {
-            XmlSerializer serializer = new XmlSerializer(typeof(T));
-            using (var sw = new StringReader(xml))
-            {
-                return serializer.Deserialize(sw) as T;
-            }
-        }
+        
 
         public static Image ToImage(this string base64)
         {

@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Newtonsoft.Json;
 
 namespace NitroCacher.Plugins
 {
@@ -22,7 +23,7 @@ namespace NitroCacher.Plugins
             try
             {
                 Directory.CreateDirectory(new FileInfo(_configPath).DirectoryName);
-                return Utils.XmlDeSerialize<T>(File.ReadAllText(_configPath));
+                return JsonConvert.DeserializeObject<T>(File.ReadAllText(_configPath));
             }
             catch
             {
@@ -33,7 +34,7 @@ namespace NitroCacher.Plugins
         public void SaveConfig<T>(T config) where T : class
         {
             Directory.CreateDirectory(new FileInfo(_configPath).DirectoryName);
-            File.WriteAllText(_configPath, Utils.XmlSerialize(config));
+            File.WriteAllText(_configPath, JsonConvert.SerializeObject(config));
         }
     }
 }
